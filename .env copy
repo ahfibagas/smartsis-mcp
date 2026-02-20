@@ -1,0 +1,14 @@
+# Database MySQL
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=Sinxxxxxg20xx
+DB_NAME=smksmartsis
+
+# Ollama
+OLLAMA_MODEL=gpt-oss:120b-cloud
+OLLAMA_BASE_URL=http://localhost:11434
+
+# Server
+PORT=3000
+MCP_PORT=3001
