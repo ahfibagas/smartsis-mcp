@@ -58,7 +58,7 @@ OLLAMA_MODEL=gpt-oss:120b-cloud
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
-DB_PASSWORD=Sintang2025
+DB_PASSWORD=Sxxxxx25
 DB_NAME=smksmartsis
 ```
 
