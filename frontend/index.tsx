@@ -283,6 +283,97 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   );
 }
 
+/* ───────────────────────────────────────────
+   MERMAID DIAGRAM COMPONENT
+   ─────────────────────────────────────────── */
+
+function MermaidBlock({ code }: { code: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [showSource, setShowSource] = useState(false);
+  const idRef = useRef(`mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mermaid = (await import("mermaid")).default;
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: "dark",
+          themeVariables: {
+            primaryColor: "#10b981",
+            primaryTextColor: "#e5e7eb",
+            primaryBorderColor: "#374151",
+            lineColor: "#6b7280",
+            secondaryColor: "#1f2937",
+            tertiaryColor: "#111827",
+            background: "#111827",
+            mainBkg: "#1f2937",
+            nodeBorder: "#374151",
+            clusterBkg: "#1f2937",
+            titleColor: "#e5e7eb",
+            edgeLabelBackground: "#1f2937",
+          },
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        });
+        const { svg: rendered } = await mermaid.render(idRef.current, code.trim());
+        if (!cancelled) setSvg(rendered);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Gagal render diagram");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [code]);
+
+  if (error) {
+    return (
+      <div className="my-3">
+        <div className="rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-3">
+          <p className="text-xs text-yellow-400 mb-2">⚠️ Mermaid syntax error:</p>
+          <pre className="text-xs text-gray-400 overflow-x-auto">{error}</pre>
+        </div>
+        <details className="mt-1">
+          <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300">Show source</summary>
+          <pre className="mt-1 p-3 rounded-lg bg-gray-950 border border-gray-700 text-xs text-gray-400 overflow-x-auto">{code}</pre>
+        </details>
+      </div>
+    );
+  }
+
+  if (!svg) {
+    return (
+      <div className="my-3 flex items-center gap-2 px-4 py-6 rounded-lg border border-gray-700 bg-gray-900 justify-center">
+        <span className="inline-block w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs text-gray-400">Rendering diagram…</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-3 rounded-lg border border-gray-700 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-950 border-b border-gray-700">
+        <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Mermaid Diagram</span>
+        <button
+          onClick={() => setShowSource(!showSource)}
+          className="text-xs px-2.5 py-1 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+        >
+          {showSource ? "Hide source" : "Show source"}
+        </button>
+      </div>
+      <div
+        ref={containerRef}
+        className="p-4 bg-gray-900 overflow-x-auto flex justify-center [&_svg]:max-w-full"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+      {showSource && (
+        <pre className="px-4 py-3 bg-gray-950 border-t border-gray-700 text-xs text-gray-400 overflow-x-auto">{code}</pre>
+      )}
+    </div>
+  );
+}
+
 function parseInline(text: string): InlineToken[] {
   if (!text) return [];
 
@@ -761,6 +852,9 @@ function MarkdownRenderer({ text }: { text: string }) {
 
   const renderBlock = (block: MarkdownBlock, idx: number) => {
     if (block.type === "codeBlock") {
+      if ((block.language || "").toLowerCase() === "mermaid") {
+        return <MermaidBlock key={idx} code={block.code || ""} />;
+      }
       return <CodeBlock key={idx} language={block.language || ""} code={block.code || ""} />;
     }
 
@@ -1024,7 +1118,7 @@ function ChatInput({ onSend, disabled }: { onSend: (text: string) => void; disab
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Message Merlin AI..."
+          placeholder="Message With AI..."
           disabled={disabled}
           rows={1}
           className="w-full resize-none rounded-xl px-4 py-3 text-sm text-gray-100 placeholder-gray-500 outline-none transition-all duration-200 bg-gray-800 border border-gray-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 disabled:opacity-50"

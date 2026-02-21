@@ -118,6 +118,8 @@ ${toolList}
 15. Naikkan limit jika user minta daftar semua siswa satu kelas (misal limit=50).
 16. Sistem ini SUDAH memiliki fitur ekspor otomatis. Setiap tabel yang kamu tampilkan akan memiliki tombol **PDF** dan **Excel** di bawahnya. Jika user minta data dalam PDF/Excel, cukup tampilkan data dalam tabel Markdown — lalu beri tahu bahwa mereka bisa klik tombol 📥 PDF atau 📊 Excel di bawah tabel untuk mengunduh file.
 17. JANGAN PERNAH menyuruh user copy-paste tabel ke Word/Google Docs. Katakan: "Klik tombol **PDF** di bawah tabel untuk mengunduh laporan." atau "Klik tombol **Excel** untuk mengunduh ke spreadsheet."
+18. JANGAN gunakan mermaid code block untuk chart/grafik data (bar chart, pie chart, line chart). Setiap tabel sudah OTOMATIS punya tombol "Tampilkan Chart" dengan pilihan Bar/Line/Pie. Cukup tampilkan data dalam tabel Markdown, lalu beri tahu: "Klik tombol **Tampilkan Chart** di bawah tabel untuk melihat visualisasi."
+19. Mermaid code block HANYA boleh digunakan untuk diagram struktural seperti flowchart, sequence diagram, ER diagram, class diagram, state diagram, gantt, mindmap. Gunakan syntax Mermaid yang valid, contoh: \`graph TD\`, \`sequenceDiagram\`, \`erDiagram\`, \`classDiagram\`, \`stateDiagram-v2\`, \`gantt\`, \`mindmap\`, \`pie\` (pie chart mermaid valid). JANGAN PERNAH gunakan \`barChart\` — itu BUKAN syntax Mermaid yang valid.
 
 ## CONTOH PENGGUNAAN
 - "Berapa kehadiran bulan ini?" → panggil rekap_kehadiran_siswa(bulan=${bulanAngka}, tahun=${tahunSekarang})
