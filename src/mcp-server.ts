@@ -721,7 +721,93 @@ server.tool(
 
 
 // ╔═══════════════════════════════════════════════════════════╗
-// ║  TOOL 11: DASHBOARD EKSEKUTIF (Query 5.1)                 ║
+// ║  TOOL 11: SISWA BELUM ABSEN (Query 1.4)                   ║
+// ╚═══════════════════════════════════════════════════════════╝
+server.tool(
+  "siswa_belum_absen",
+  "Menampilkan daftar siswa yang belum melakukan absensi pada rentang tanggal tertentu. " +
+  "Hanya menampilkan hari kerja (Senin-Jumat). " +
+  "Gunakan ketika user bertanya tentang siswa yang belum absen, tidak absen, belum presensi, " +
+  "atau ingin mengetahui siapa saja yang belum tercatat kehadirannya.",
+  {
+    tanggal_awal: z.string().describe("Tanggal awal periode (format: YYYY-MM-DD)"),
+    tanggal_akhir: z.string().describe("Tanggal akhir periode (format: YYYY-MM-DD)"),
+    kelas: z.string().optional().describe("Filter nama kelas tertentu (opsional)"),
+    nama_siswa: z.string().optional().describe("Filter nama siswa (opsional)"),
+  },
+  async ({ tanggal_awal, tanggal_akhir, kelas, nama_siswa }) => {
+    try {
+      let query = `
+        WITH RECURSIVE date_range AS (
+          SELECT DATE(?) AS tanggal
+          UNION ALL
+          SELECT tanggal + INTERVAL 1 DAY FROM date_range WHERE tanggal < ?
+        )
+        SELECT
+          dr.tanggal,
+          DATE_FORMAT(dr.tanggal, '%d %M %Y') AS tanggal_format,
+          k.nama AS kelas,
+          k.tingkat,
+          k.jurusan,
+          s.nis,
+          s.nama AS nama_siswa,
+          'Belum Absen' AS status
+        FROM date_range dr
+        CROSS JOIN siswa s
+        JOIN penempatan_kelas pk ON pk.siswa_id = s.id
+          AND pk.status = 'aktif'
+          AND pk.deleted_at IS NULL
+          AND pk.tanggal_mulai <= dr.tanggal
+          AND (pk.tanggal_berakhir IS NULL OR pk.tanggal_berakhir >= dr.tanggal)
+        JOIN kelas k ON pk.kelas_id = k.id
+          AND k.deleted_at IS NULL
+        LEFT JOIN absensi a ON a.siswa_id = s.id
+          AND a.tanggal = dr.tanggal
+          AND a.deleted_at IS NULL
+        WHERE a.id IS NULL
+          AND s.status = 'aktif'
+          AND s.deleted_at IS NULL
+          AND WEEKDAY(dr.tanggal) BETWEEN 0 AND 4
+      `;
+      const params: any[] = [tanggal_awal, tanggal_akhir];
+
+      if (kelas) {
+        query += ` AND k.nama LIKE ?`;
+        params.push(`%${kelas}%`);
+      }
+      if (nama_siswa) {
+        query += ` AND s.nama LIKE ?`;
+        params.push(`%${nama_siswa}%`);
+      }
+
+      query += ` ORDER BY dr.tanggal DESC, k.nama ASC, s.nama ASC`;
+
+      const [rows] = await pool.execute(query, params) as [any[], any];
+
+      // Hitung ringkasan per tanggal
+      const perTanggal: Record<string, number> = {};
+      rows.forEach((r: any) => {
+        perTanggal[r.tanggal_format] = (perTanggal[r.tanggal_format] || 0) + 1;
+      });
+
+      // Hitung siswa unik
+      const siswaUnik = new Set(rows.map((r: any) => r.nis)).size;
+
+      return formatResponse("Daftar Siswa Belum Absen", rows, {
+        periode: `${tanggal_awal} s/d ${tanggal_akhir}`,
+        total_record: rows.length,
+        total_siswa_unik: siswaUnik,
+        rekap_per_tanggal: perTanggal,
+      });
+    } catch (error: any) {
+      return errorResponse(`Gagal mengambil data siswa belum absen: ${error.message}`);
+    }
+  }
+);
+
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  TOOL 12: DASHBOARD EKSEKUTIF (Query 5.1)                 ║
 // ╚═══════════════════════════════════════════════════════════╝
 
 server.tool(
@@ -866,7 +952,8 @@ async function main() {
   console.error("   8.  laporan_siswa_per_kelas");
   console.error("   9.  profil_siswa");
   console.error("   10. rekap_tagihan_lain");
-  console.error("   11. dashboard_eksekutif");
+  console.error("   11. siswa_belum_absen");
+  console.error("   12. dashboard_eksekutif");
   console.error("═══════════════════════════════════════════════");
 }
 
