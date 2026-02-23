@@ -63,17 +63,19 @@ server.tool(
           k.nama AS kelas,
           MONTHNAME(MIN(a.tanggal)) AS bulan,
           YEAR(MIN(a.tanggal)) AS tahun,
-          SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) AS total_hadir,
-          SUM(CASE WHEN a.status = 'sakit' THEN 1 ELSE 0 END) AS total_sakit,
-          SUM(CASE WHEN a.status = 'izin' THEN 1 ELSE 0 END) AS total_izin,
-          SUM(CASE WHEN a.status = 'alpa' THEN 1 ELSE 0 END) AS total_alpa,
+          SUM(CASE WHEN a.status = 'Hadir' THEN 1 ELSE 0 END) AS total_hadir,
+          SUM(CASE WHEN a.status = 'Sakit' THEN 1 ELSE 0 END) AS total_sakit,
+          SUM(CASE WHEN a.status = 'Izin' THEN 1 ELSE 0 END) AS total_izin,
+          SUM(CASE WHEN a.status = 'Alfa' THEN 1 ELSE 0 END) AS total_alpa,
           COUNT(*) AS total_hari,
-          ROUND(SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) AS persentase_kehadiran
+          ROUND(SUM(CASE WHEN a.status = 'Hadir' THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) AS persentase_kehadiran
         FROM absensi a
         JOIN siswa s ON a.siswa_id = s.id
         JOIN kelas k ON a.kelas_id = k.id
         WHERE MONTH(a.tanggal) = ? AND YEAR(a.tanggal) = ?
+          AND a.deleted_at IS NULL
           AND s.deleted_at IS NULL
+          AND k.deleted_at IS NULL
       `;
       const params: any[] = [bulan, tahun];
 
@@ -133,12 +135,14 @@ server.tool(
           k.jurusan,
           k.wali_kelas,
           COUNT(DISTINCT a.siswa_id) AS jumlah_siswa,
-          ROUND(AVG(CASE WHEN a.status = 'hadir' THEN 100.0 ELSE 0 END), 2) AS rata_rata_kehadiran,
-          SUM(CASE WHEN a.status = 'alpa' THEN 1 ELSE 0 END) AS total_alpa_kelas,
-          SUM(CASE WHEN a.status = 'sakit' THEN 1 ELSE 0 END) AS total_sakit_kelas
+          ROUND(AVG(CASE WHEN a.status = 'Hadir' THEN 100.0 ELSE 0 END), 2) AS rata_rata_kehadiran,
+          SUM(CASE WHEN a.status = 'Alfa' THEN 1 ELSE 0 END) AS total_alpa_kelas,
+          SUM(CASE WHEN a.status = 'Sakit' THEN 1 ELSE 0 END) AS total_sakit_kelas
         FROM absensi a
         JOIN kelas k ON a.kelas_id = k.id
         WHERE a.tanggal BETWEEN ? AND ?
+          AND a.deleted_at IS NULL
+          AND k.deleted_at IS NULL
       `;
       const params: any[] = [tanggal_awal, tanggal_akhir];
 
@@ -192,14 +196,16 @@ server.tool(
           s.whatsapp_orang_tua,
           s.nama_orang_tua,
           COUNT(*) AS total_hari,
-          SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) AS hadir,
-          SUM(CASE WHEN a.status = 'alpa' THEN 1 ELSE 0 END) AS alpa,
-          ROUND(SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) AS persen_hadir
+          SUM(CASE WHEN a.status = 'Hadir' THEN 1 ELSE 0 END) AS hadir,
+          SUM(CASE WHEN a.status = 'Alfa' THEN 1 ELSE 0 END) AS alpa,
+          ROUND(SUM(CASE WHEN a.status = 'Hadir' THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) AS persen_hadir
         FROM absensi a
         JOIN siswa s ON a.siswa_id = s.id
         JOIN kelas k ON a.kelas_id = k.id
         WHERE a.tanggal BETWEEN CONCAT(?, '-01-01') AND CONCAT(?, '-12-31')
+          AND a.deleted_at IS NULL
           AND s.deleted_at IS NULL
+          AND k.deleted_at IS NULL
       `;
       const params: any[] = [tahun, tahun];
 
@@ -268,6 +274,8 @@ server.tool(
         LEFT JOIN pembayaran_spps p ON p.tagihan_spp_id = t.id
         WHERE t.tahun = ?
           AND t.deleted_at IS NULL
+          AND s.deleted_at IS NULL
+          AND k.deleted_at IS NULL
       `;
       const params: any[] = [tahun];
 
@@ -352,6 +360,7 @@ server.tool(
           AND t.tanggal_jatuh_tempo < CURDATE()
           AND t.deleted_at IS NULL
           AND s.deleted_at IS NULL
+          AND k.deleted_at IS NULL
       `;
       const params: any[] = [];
 
@@ -404,7 +413,7 @@ server.tool(
   {
     tanggal_awal: z.string().describe("Tanggal awal (format: YYYY-MM-DD)"),
     tanggal_akhir: z.string().describe("Tanggal akhir (format: YYYY-MM-DD)"),
-    metode_bayar: z.string().optional().describe("Filter metode bayar: tunai/transfer/qris (opsional)"),
+    metode_bayar: z.string().optional().describe("Filter metode bayar: tunai/transfer/cicil (opsional)"),
   },
   async ({ tanggal_awal, tanggal_akhir, metode_bayar }) => {
     try {
@@ -476,6 +485,7 @@ server.tool(
         JOIN kelas k ON t.kelas_id = k.id
         WHERE t.tahun = ?
           AND t.deleted_at IS NULL
+          AND k.deleted_at IS NULL
       `;
       const params: any[] = [tahun];
 
@@ -503,7 +513,7 @@ server.tool(
         total_kelas: rows.length,
         grand_total_tagihan: `Rp ${totalSemuaTagihan.toLocaleString('id-ID')}`,
         grand_total_terbayar: `Rp ${totalSemuaTerbayar.toLocaleString('id-ID')}`,
-        persen_keseluruhan: `${(totalSemuaTerbayar / totalSemuaTagihan * 100).toFixed(2)}%`,
+        persen_keseluruhan: totalSemuaTagihan > 0 ? `${(totalSemuaTerbayar / totalSemuaTagihan * 100).toFixed(2)}%` : '0%',
         kelas_terbaik: rows.length > 0 ? `${rows[0].kelas} (${rows[0].persen_terbayar}%)` : '-',
       });
     } catch (error: any) {
@@ -541,6 +551,8 @@ server.tool(
         JOIN siswa s ON pk.siswa_id = s.id
         WHERE ta.status = 'aktif'
           AND s.deleted_at IS NULL
+          AND k.deleted_at IS NULL
+          AND pk.deleted_at IS NULL
       `;
       const params: any[] = [];
 
@@ -607,6 +619,7 @@ server.tool(
         JOIN kelas k ON pk.kelas_id = k.id
         JOIN tahun_ajaran ta ON pk.tahun_ajaran_id = ta.id
         WHERE ta.status = 'aktif' AND s.deleted_at IS NULL
+          AND k.deleted_at IS NULL AND pk.deleted_at IS NULL
       `;
       const params: any[] = [];
 
@@ -660,7 +673,7 @@ server.tool(
       let query = `
         SELECT 
           s.nis, s.nama AS nama_siswa,
-          tl.nama_tagihan,
+          jt.nama AS nama_tagihan,
           tl.jumlah AS total_tagihan,
           tl.sisa_tagihan,
           CASE 
@@ -669,6 +682,7 @@ server.tool(
           END AS status_bayar
         FROM tagihan_lains tl
         JOIN siswa s ON tl.siswa_id = s.id
+        JOIN jenis_tagihans jt ON tl.jenis_tagihan_id = jt.id
         WHERE tl.deleted_at IS NULL AND s.deleted_at IS NULL
       `;
       const params: any[] = [];
@@ -732,12 +746,12 @@ server.tool(
       // Query 2: Rata-rata kehadiran bulan ini
       const [kehadiranRows] = await pool.execute(`
         SELECT 
-          ROUND(AVG(CASE WHEN status = 'hadir' THEN 100.0 ELSE 0 END), 2) AS rata_kehadiran,
+          ROUND(AVG(CASE WHEN status = 'Hadir' THEN 100.0 ELSE 0 END), 2) AS rata_kehadiran,
           COUNT(*) AS total_record_absensi,
-          SUM(CASE WHEN status = 'hadir' THEN 1 ELSE 0 END) AS total_hadir,
-          SUM(CASE WHEN status = 'alpa' THEN 1 ELSE 0 END) AS total_alpa,
-          SUM(CASE WHEN status = 'sakit' THEN 1 ELSE 0 END) AS total_sakit,
-          SUM(CASE WHEN status = 'izin' THEN 1 ELSE 0 END) AS total_izin
+          SUM(CASE WHEN status = 'Hadir' THEN 1 ELSE 0 END) AS total_hadir,
+          SUM(CASE WHEN status = 'Alfa' THEN 1 ELSE 0 END) AS total_alpa,
+          SUM(CASE WHEN status = 'Sakit' THEN 1 ELSE 0 END) AS total_sakit,
+          SUM(CASE WHEN status = 'Izin' THEN 1 ELSE 0 END) AS total_izin
         FROM absensi 
         WHERE MONTH(tanggal) = MONTH(CURDATE()) 
           AND YEAR(tanggal) = YEAR(CURDATE())
@@ -771,7 +785,7 @@ server.tool(
         FROM (
           SELECT 
             a.siswa_id,
-            ROUND(SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) AS persen
+            ROUND(SUM(CASE WHEN a.status = 'Hadir' THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) AS persen
           FROM absensi a
           WHERE MONTH(a.tanggal) = MONTH(CURDATE()) 
             AND YEAR(a.tanggal) = YEAR(CURDATE())

@@ -24,6 +24,17 @@ export interface RekapKehadiran {
   persentase_kehadiran: number;
 }
 
+export interface DetailKehadiranHarian {
+  nis: string;
+  nama_siswa: string;
+  kelas: string;
+  tanggal: string;
+  hari: string;
+  status: 'Hadir' | 'Sakit' | 'Izin' | 'Alfa';
+  metode: string;
+  waktu_absen: string | null;
+}
+
 export interface DashboardEksekutif {
   total_siswa_aktif: number;
   rata_kehadiran_bulan_ini: number;
