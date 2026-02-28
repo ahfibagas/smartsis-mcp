@@ -20,6 +20,9 @@ async function loadSDK() {
 
 const COPILOT_MODEL = process.env.COPILOT_MODEL || "claude-sonnet-4.6";
 
+// Global model — bisa diubah oleh user, berlaku untuk semua session baru
+let globalModel: string = COPILOT_MODEL;
+
 let client: any = null;
 
 // ═══════════════════════════════════════════════════════════
@@ -27,6 +30,7 @@ let client: any = null;
 // ═══════════════════════════════════════════════════════════
 interface ManagedSession {
   session: any; // CopilotSession (ESM dynamic import)
+  model: string;
   createdAt: Date;
   lastUsed: Date;
 }
@@ -116,6 +120,55 @@ export async function initCopilot(): Promise<void> {
 }
 
 // ═══════════════════════════════════════════════════════════
+// LIST MODELS — Ambil daftar model yang tersedia dari Copilot
+// ═══════════════════════════════════════════════════════════
+let cachedModels: any[] | null = null;
+
+export async function listModels(): Promise<any[]> {
+  if (!client) throw new Error("Copilot SDK belum diinisialisasi.");
+  if (cachedModels) return cachedModels;
+
+  try {
+    const result = await client.rpc.models.list();
+    cachedModels = (result.models || []).map((m: any) => ({
+      id: m.id,
+      name: m.name,
+      capabilities: m.capabilities,
+      policy: m.policy,
+      billing: m.billing,
+      supportedReasoningEfforts: m.supportedReasoningEfforts,
+    }));
+    // Cache selama 10 menit
+    setTimeout(() => { cachedModels = null; }, 600000);
+    return cachedModels!;
+  } catch (error: any) {
+    console.error('❌ Gagal list models:', error.message);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// PER-SESSION MODEL — Track model yang dipakai tiap session
+// ═══════════════════════════════════════════════════════════
+const sessionModels = new Map<string, string>();
+
+export function setSessionModel(sessionId: string, model: string): void {
+  sessionModels.set(sessionId, model);
+}
+
+export function getSessionModel(sessionId: string): string {
+  return sessionModels.get(sessionId) || globalModel;
+}
+
+export function setGlobalModel(model: string): void {
+  globalModel = model;
+}
+
+export function getGlobalModel(): string {
+  return globalModel;
+}
+
+// ═══════════════════════════════════════════════════════════
 // CREATE SESSION — Buat session baru dengan MCP server smartsis
 // ═══════════════════════════════════════════════════════════
 async function createSession(sessionId: string): Promise<ManagedSession> {
@@ -123,10 +176,11 @@ async function createSession(sessionId: string): Promise<ManagedSession> {
     throw new Error("Copilot SDK belum diinisialisasi. Panggil initCopilot() terlebih dahulu.");
   }
 
+  const selectedModel = getSessionModel(sessionId);
   const mcpServerScript = path.resolve("src/mcp-server.ts");
 
   const session = await client.createSession({
-    model: COPILOT_MODEL,
+    model: selectedModel,
     streaming: true,
 
     // System prompt: mode "replace" agar kita kontrol penuh
@@ -156,12 +210,13 @@ async function createSession(sessionId: string): Promise<ManagedSession> {
 
   const managed: ManagedSession = {
     session,
+    model: selectedModel,
     createdAt: new Date(),
     lastUsed: new Date(),
   };
 
   activeSessions.set(sessionId, managed);
-  console.log(`📎 Copilot session "${sessionId}" dibuat (model: ${COPILOT_MODEL})`);
+  console.log(`📎 Copilot session "${sessionId}" dibuat (model: ${selectedModel})`);
   return managed;
 }
 
@@ -251,6 +306,7 @@ export async function resetSession(sessionId: string): Promise<void> {
       // Session mungkin sudah di-destroy
     }
     activeSessions.delete(sessionId);
+    // Jangan hapus sessionModels — biar model pilihan user tetap preserved
     console.log(`🗑️  Session "${sessionId}" di-destroy`);
   }
 }
@@ -260,7 +316,7 @@ export function getSessionCount(): number {
 }
 
 export function getModel(): string {
-  return COPILOT_MODEL;
+  return globalModel;
 }
 
 export function isInitialized(): boolean {

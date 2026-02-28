@@ -128,6 +128,52 @@ app.post('/api/reset', async (req, res) => {
 
 
 // ═══════════════════════════════════════════════════════════
+// API: GET /api/models — Daftar model AI yang tersedia
+// ═══════════════════════════════════════════════════════════
+app.get('/api/models', async (_req, res) => {
+  try {
+    const models = await copilot.listModels();
+    res.json({
+      current: copilot.getModel(),
+      models: models.map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        enabled: m.policy?.state !== 'disabled',
+        vision: m.capabilities?.supports?.vision || false,
+        reasoning: m.capabilities?.supports?.reasoningEffort || false,
+        multiplier: m.billing?.multiplier,
+      })),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// API: POST /api/model — Ganti model untuk session tertentu
+// ═══════════════════════════════════════════════════════════
+app.post('/api/model', async (req, res) => {
+  const { model, sessionId = 'default' } = req.body;
+  if (!model) {
+    return res.status(400).json({ error: 'Model harus diisi' });
+  }
+
+  // Set model baru secara global (berlaku untuk semua session baru)
+  copilot.setGlobalModel(model);
+
+  // Set juga untuk session ini secara spesifik
+  copilot.setSessionModel(sessionId, model);
+
+  // Reset session agar dibuat ulang dengan model baru
+  await copilot.resetSession(sessionId);
+
+  console.log(`🔄 Model diganti ke "${model}" (global + session "${sessionId}")`);
+  res.json({ success: true, model, sessionId });
+});
+
+
+// ═══════════════════════════════════════════════════════════
 // API: GET /api/tools — Daftar tools yang tersedia
 // ═══════════════════════════════════════════════════════════
 app.get('/api/tools', (_req, res) => {
