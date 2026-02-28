@@ -99,6 +99,52 @@ async function sendChatMessage(message: string, sessionId: string): Promise<{ re
   return response.json();
 }
 
+async function streamChatMessage(
+  message: string,
+  sessionId: string,
+  onDelta: (text: string) => void
+): Promise<string> {
+  const response = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, sessionId }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: `Server error ${response.status}` }));
+    throw new Error(err.error || err.detail || `Server error ${response.status}`);
+  }
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const payload = JSON.parse(line.slice(6));
+        if (payload.error) throw new Error(payload.error);
+        if (payload.done) break;
+        if (payload.delta) {
+          fullText += payload.delta;
+          onDelta(fullText);
+        }
+      } catch (e: any) {
+        if (e.message && !e.message.includes('JSON')) throw e;
+      }
+    }
+  }
+  return fullText;
+}
+
 async function resetSession(sessionId: string) {
   await fetch('/api/reset', {
     method: 'POST',
@@ -1068,8 +1114,13 @@ function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStrea
               : "px-5 py-4 bg-gray-800 text-gray-200 rounded-bl-md border border-gray-700 shadow-lg shadow-black/10"
           }`}
         >
-          {isStreaming ? (
+          {isStreaming && !message.content ? (
             <TypingIndicator />
+          ) : isStreaming && message.content ? (
+            <div>
+              <MarkdownRenderer text={message.content} />
+              <span className="inline-block w-2 h-4 bg-emerald-400 animate-pulse ml-0.5 align-text-bottom rounded-sm" />
+            </div>
           ) : isUser ? (
             <span className="whitespace-pre-wrap">{message.content}</span>
           ) : (
@@ -1464,6 +1515,8 @@ export default function SmartSISChat() {
     );
   };
 
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+
   const handleSend = async (content: string) => {
     if (!activeChat || isAiTyping) return;
 
@@ -1474,7 +1527,16 @@ export default function SmartSISChat() {
       timestamp: new Date(),
     };
 
-    const updatedMessages = [...messages, userMessage];
+    // Placeholder AI message yang akan di-stream
+    const aiMessageId = generateId();
+    const aiPlaceholder: ChatMessage = {
+      id: aiMessageId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    };
+
+    const updatedMessages = [...messages, userMessage, aiPlaceholder];
     updateChatMessages(activeChatId, updatedMessages);
 
     if (messages.length === 0) {
@@ -1483,41 +1545,61 @@ export default function SmartSISChat() {
     }
 
     setIsAiTyping(true);
+    setStreamingMessageId(aiMessageId);
 
-    // Real API call
     const currentSessionId = activeChat.sessionId;
+    const chatId = activeChatId;
     try {
-      const data = await sendChatMessage(content, currentSessionId);
-      const aiMessage = {
-        id: generateId(),
-        role: "assistant",
-        content: data.reply || "(Tidak ada respons)",
-        timestamp: new Date(),
-        toolsUsed: data.toolsUsed || 0,
-      };
+      const finalText = await streamChatMessage(content, currentSessionId, (textSoFar) => {
+        // Update AI message content secara real-time
+        setChats((prev) =>
+          prev.map((chat) =>
+            chat.id === chatId
+              ? {
+                  ...chat,
+                  messages: chat.messages.map((msg) =>
+                    msg.id === aiMessageId ? { ...msg, content: textSoFar } : msg
+                  ),
+                }
+              : chat
+          )
+        );
+      });
+
+      // Final update dengan teks lengkap
       setChats((prev) =>
         prev.map((chat) =>
-          chat.id === activeChatId
-            ? { ...chat, messages: [...chat.messages, aiMessage] }
+          chat.id === chatId
+            ? {
+                ...chat,
+                messages: chat.messages.map((msg) =>
+                  msg.id === aiMessageId
+                    ? { ...msg, content: finalText || "(Tidak ada respons)" }
+                    : msg
+                ),
+              }
             : chat
         )
       );
     } catch (error: any) {
-      const errorMessage = {
-        id: generateId(),
-        role: "assistant",
-        content: `❌ Gagal menghubungi server: ${error.message}`,
-        timestamp: new Date(),
-      };
+      // Update placeholder menjadi pesan error
       setChats((prev) =>
         prev.map((chat) =>
-          chat.id === activeChatId
-            ? { ...chat, messages: [...chat.messages, errorMessage] }
+          chat.id === chatId
+            ? {
+                ...chat,
+                messages: chat.messages.map((msg) =>
+                  msg.id === aiMessageId
+                    ? { ...msg, content: `❌ Gagal menghubungi server: ${error.message}` }
+                    : msg
+                ),
+              }
             : chat
         )
       );
     } finally {
       setIsAiTyping(false);
+      setStreamingMessageId(null);
     }
   };
 
@@ -1784,22 +1866,12 @@ export default function SmartSISChat() {
             <div className="max-w-3xl mx-auto">
               {messages.map((msg) => (
                 <div key={msg.id} className="message-appear">
-                  <MessageBubble message={msg} isStreaming={false} />
-                </div>
-              ))}
-              {isAiTyping && (
-                <div className="message-appear">
                   <MessageBubble
-                    message={{
-                      id: "typing",
-                      role: "assistant",
-                      content: "",
-                      timestamp: new Date(),
-                    }}
-                    isStreaming={true}
+                    message={msg}
+                    isStreaming={msg.id === streamingMessageId && isAiTyping}
                   />
                 </div>
-              )}
+              ))}
               <div ref={messagesEndRef} />
             </div>
           </div>
