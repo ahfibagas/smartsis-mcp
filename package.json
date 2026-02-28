@@ -8,9 +8,11 @@
     "dev:frontend": "vite dev",
     "start:mcp": "tsx src/mcp-server.ts",
     "start:backend": "tsx src/backend.ts",
+    "start:backend:ollama": "OLLAMA_MODE=true tsx src/backend.ts",
     "dev": "concurrently \"npm run start:mcp\" \"npm run start:backend\""
   },
   "dependencies": {
+    "@github/copilot-sdk": "^0.1.29",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
