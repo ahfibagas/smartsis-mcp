@@ -26,6 +26,22 @@ app.use(express.static(staticPath));
 const PORT = parseInt(process.env.PORT || '3000');
 
 // ═══════════════════════════════════════════════════════════
+// AUTH TOKEN — Hardcoded sementara
+// ═══════════════════════════════════════════════════════════
+const AUTH_TOKEN = '676869';
+
+function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== `Bearer ${AUTH_TOKEN}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// Proteksi semua endpoint /api/*
+app.use('/api', authMiddleware);
+
+// ═══════════════════════════════════════════════════════════
 // MCP CLIENT — Koneksi ke MCP Server
 // ═══════════════════════════════════════════════════════════
 let mcpClient: Client;

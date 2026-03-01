@@ -80,6 +80,28 @@ interface MarkdownElement {
 }
 
 /* ───────────────────────────────────────────
+   AUTH HELPER
+   ─────────────────────────────────────────── */
+const AUTH_STORAGE_KEY = 'smartsis-auth-token';
+
+function getAuthToken(): string | null {
+  return localStorage.getItem(AUTH_STORAGE_KEY);
+}
+
+function setAuthToken(token: string) {
+  localStorage.setItem(AUTH_STORAGE_KEY, token);
+}
+
+function clearAuthToken() {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` } : { 'Content-Type': 'application/json' };
+}
+
+/* ───────────────────────────────────────────
    API HELPER
    ─────────────────────────────────────────── */
 function generateSessionId() {
@@ -89,7 +111,7 @@ function generateSessionId() {
 async function sendChatMessage(message: string, sessionId: string): Promise<{ reply: string; toolsUsed: number }> {
   const response = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ message, sessionId }),
   });
   if (!response.ok) {
@@ -106,7 +128,7 @@ async function streamChatMessage(
 ): Promise<string> {
   const response = await fetch('/api/chat/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ message, sessionId }),
   });
   if (!response.ok) {
@@ -148,7 +170,7 @@ async function streamChatMessage(
 async function resetSession(sessionId: string) {
   await fetch('/api/reset', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ sessionId }),
   });
 }
@@ -166,7 +188,7 @@ interface ModelInfo {
 }
 
 async function fetchModels(): Promise<{ current: string; models: ModelInfo[] }> {
-  const res = await fetch('/api/models');
+  const res = await fetch('/api/models', { headers: authHeaders() });
   if (!res.ok) return { current: '', models: [] };
   return res.json();
 }
@@ -174,7 +196,7 @@ async function fetchModels(): Promise<{ current: string; models: ModelInfo[] }> 
 async function switchModel(model: string, sessionId: string): Promise<void> {
   await fetch('/api/model', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ model, sessionId }),
   });
 }
@@ -1396,11 +1418,88 @@ function loadChatsFromStorage(): { chats: Chat[]; activeId: string } | null {
 }
 
 /* ───────────────────────────────────────────
+   LOGIN SCREEN COMPONENT
+   ─────────────────────────────────────────── */
+
+function LoginScreen({ onLogin }: { onLogin: () => void }) {
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token.trim()) return;
+
+    setLoading(true);
+    setError("");
+
+    // Test token against backend
+    try {
+      const res = await fetch("/api/health", {
+        headers: { Authorization: `Bearer ${token.trim()}` },
+      });
+      if (res.ok) {
+        setAuthToken(token.trim());
+        onLogin();
+      } else {
+        setError("Token tidak valid");
+      }
+    } catch {
+      setError("Tidak dapat terhubung ke server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-900 px-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-emerald-600 bg-opacity-20 shadow-lg shadow-emerald-900/10">
+            <Sparkles size={32} className="text-emerald-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-100">SMK Smart SIS</h1>
+          <p className="text-sm text-gray-400 mt-1">Masukkan token untuk melanjutkan</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="Masukkan token akses"
+            className="w-full rounded-xl px-4 py-3 text-sm text-gray-100 placeholder-gray-500 outline-none bg-gray-800 border border-gray-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50"
+            autoFocus
+          />
+          {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+          <button
+            type="submit"
+            disabled={!token.trim() || loading}
+            className="w-full py-3 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white shadow-lg shadow-emerald-900/30"
+          >
+            {loading ? "Memverifikasi..." : "Masuk"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────
    ROOT CHAT COMPONENT
    ─────────────────────────────────────────── */
 
 export default function SmartSISChat() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [authed, setAuthed] = useState(() => !!getAuthToken());
+
+  if (!authed) {
+    return <LoginScreen onLogin={() => setAuthed(true)} />;
+  }
+
+  return <SmartSISChatInner />;
+}
+
+function SmartSISChatInner() {
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
 
   const [chats, setChats] = useState<Chat[]>(() => {
     const saved = loadChatsFromStorage();
@@ -1470,7 +1569,7 @@ export default function SmartSISChat() {
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const res = await fetch("/api/notifications");
+        const res = await fetch("/api/notifications", { headers: authHeaders() });
         if (res.ok) {
           const data = await res.json();
           setNotifications(data.notifications || []);
@@ -1713,7 +1812,7 @@ export default function SmartSISChat() {
               <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-emerald-600 shadow-md shadow-emerald-900/30">
                 <Bot size={16} className="text-white" />
               </div>
-              <h1 className="text-base font-semibold text-gray-100">SMK Smart SIS</h1>
+              <h1 className="text-base font-semibold text-gray-100 hidden sm:block">SMK Smart SIS</h1>
               <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/50 text-emerald-400 border border-emerald-800">
                 AI
               </span>
@@ -1764,83 +1863,6 @@ export default function SmartSISChat() {
             )}
           </div>
           <div className="flex items-center gap-1">
-            {/* Export dropdown */}
-            {messages.length > 0 && (
-              <div className="relative" onClick={(e) => e.stopPropagation()}>
-                <button
-                  onClick={() => { setShowExportMenu(!showExportMenu); setShowNotifPanel(false); }}
-                  className="p-2 rounded-lg transition-colors duration-150 hover:bg-gray-800 text-gray-400 hover:text-blue-400"
-                  aria-label="Export chat"
-                  title="Export chat"
-                >
-                  <Download size={18} />
-                </button>
-                {showExportMenu && (
-                  <div className="absolute right-0 top-10 w-44 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
-                    <button
-                      onClick={() => { exportChatToPDF(messages, activeChat?.title || "chat"); setShowExportMenu(false); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
-                    >
-                      <Download size={15} className="text-red-400" />
-                      Export PDF
-                    </button>
-                    <button
-                      onClick={() => { exportChatToExcel(messages, activeChat?.title || "chat"); setShowExportMenu(false); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
-                    >
-                      <FileSpreadsheet size={15} className="text-green-400" />
-                      Export Excel
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Notification bell */}
-            <div className="relative" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => { setShowNotifPanel(!showNotifPanel); setShowExportMenu(false); }}
-                className="relative p-2 rounded-lg transition-colors duration-150 hover:bg-gray-800 text-gray-400 hover:text-yellow-400"
-                aria-label="Notifikasi"
-                title="Notifikasi"
-              >
-                {unreadCount > 0 ? <BellRing size={18} /> : <Bell size={18} />}
-                {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
-                )}
-              </button>
-              {showNotifPanel && (
-                <div className="absolute right-0 top-10 w-80 max-h-96 overflow-y-auto bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-                    <h3 className="text-sm font-semibold text-gray-200">Notifikasi</h3>
-                    <button onClick={() => setShowNotifPanel(false)} className="text-gray-500 hover:text-gray-300 p-1"><X size={14} /></button>
-                  </div>
-                  {notifications.length === 0 ? (
-                    <p className="text-xs text-gray-500 text-center py-8">Tidak ada notifikasi</p>
-                  ) : (
-                    notifications.map((notif) => (
-                      <div
-                        key={notif.id}
-                        onClick={() => markNotifRead(notif.id)}
-                        className={`px-4 py-3 border-b border-gray-800 cursor-pointer transition-colors ${
-                          notif.read ? "bg-gray-900" : "bg-gray-800/50"
-                        } hover:bg-gray-800`}
-                      >
-                        <div className="flex items-center gap-2">
-                          {!notif.read && <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />}
-                          <p className="text-sm font-medium text-gray-200">{notif.title}</p>
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1 line-clamp-2">{notif.message}</p>
-                        <p className="text-[10px] text-gray-600 mt-1">{notif.timestamp}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-
             <button
               onClick={handleResetChat}
               className="p-2 rounded-lg transition-colors duration-150 hover:bg-gray-800 text-gray-400 hover:text-yellow-400"
