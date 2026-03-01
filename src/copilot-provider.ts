@@ -111,8 +111,8 @@ export async function initCopilot(): Promise<void> {
   const githubToken = process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 
   client = new CopilotClientClass({
-    // Jika ada token di env var, pakai langsung
-    ...(githubToken ? { githubToken } : {}),
+    // Jika ada token di env var, pakai langsung; jika tidak, pakai stored credential dari 'copilot login'
+    ...(githubToken ? { githubToken } : { useLoggedInUser: true }),
     autoStart: true,
     logLevel: process.env.COPILOT_LOG_LEVEL as any || "warning",
   });
